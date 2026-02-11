@@ -266,7 +266,9 @@ class ConvNetBN(nn.Module):
           stride=2,
           padding=1
         )
+        self.bn1 = BatchNormalization(4)
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
         self.conv2 = nn.Conv2d(
           in_channels=4,
           out_channels=16,
@@ -274,7 +276,9 @@ class ConvNetBN(nn.Module):
           stride=2,
           padding=1
         )
+        self.bn2 = BatchNormalization(16)
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
         self.conv3 = nn.Conv2d(
           in_channels=16,
           out_channels=32,
@@ -283,12 +287,11 @@ class ConvNetBN(nn.Module):
           padding=1
         )
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.bn3 = BatchNormalization(32)
+
         self.fc1 = nn.LazyLinear(out_features=1024)
         # self.fc1 = nn.Linear(in_features=32*4*4, out_features=1024)
-        self.fc2 = nn.Linear(in_features=1024, out_features=4)
-        self.bn1 = BatchNormalization(4)
-        self.bn2 = BatchNormalization(4)
-        self.bn3 = BatchNormalization(4)
+        self.fc2 = nn.Linear(in_features=1024, out_features=num_classes)
         # END TODO
 
     def forward(self, x):
@@ -355,7 +358,9 @@ class ConvNetDropout(nn.Module):
           stride=2,
           padding=1
         )
+        self.bn1 = BatchNormalization(4)
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
         self.conv2 = nn.Conv2d(
           in_channels=4,
           out_channels=16,
@@ -363,7 +368,9 @@ class ConvNetDropout(nn.Module):
           stride=2,
           padding=1
         )
+        self.bn2 = BatchNormalization(16)
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
         self.conv3 = nn.Conv2d(
           in_channels=16,
           out_channels=32,
@@ -371,13 +378,13 @@ class ConvNetDropout(nn.Module):
           stride=2,
           padding=1
         )
+        self.bn3 = BatchNormalization(32)
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
         self.fc1 = nn.LazyLinear(out_features=1024)
         # self.fc1 = nn.Linear(in_features=32*4*4, out_features=1024)
         self.fc2 = nn.Linear(in_features=1024, out_features=4)
-        self.bn1 = BatchNormalization(4)
-        self.bn2 = BatchNormalization(4)
-        self.bn3 = BatchNormalization(4)
+
         # NOTE: whether we need to use our own dropout or not ?????
         self.drop1 = CustomDropout(p=0.5)
         self.drop2 = CustomDropout(p=0.5)
@@ -412,13 +419,43 @@ class ResidualBlock(nn.Module):
         # 2 batch normalization layers: named bn1, bn2
 
         # TODO: initialize a residual block with the layers specified above
+        self.conv1 = nn.Conv2d(
+          in_channels=in_channel,
+          out_channels=interm_channel,
+          kernel_size=3,
+          stride=stride,
+          padding=1
+        )
+        self.bn1 = nn.BatchNorm2d(num_features=interm_channel)
+        self.relu = nn.ReLU()
+
+
+        self.conv2 = nn.Conv2d(
+          in_channels=interm_channel,
+          out_channels=out_channel,
+          kernel_size=3,
+          stride=stride,
+          padding=1
+        )
+        self.bn2 = nn.BatchNorm2d(num_features=out_channel)
+
+        # use conv3 to adjusts the input tensor, which make the ouput dim matches the main branch out_channel
+        self.conv3 = nn.Conv2d(
+          in_channels=in_channel,
+          out_channels=out_channel,
+          kernel_size=1,
+          stride=stride
+        )
         # END TODO
-        pass
 
     def forward(self, x):
         # TODO: implement the forward function based on the architecture above
+        output1 = self.bn2(self.conv2(self.relu(self.bn1(self.conv1(x)))))
+        output2 = self.conv3(x)
+
+        output = self.relu(output1+output2)
         # END TODO
-        pass
+        return output
 
 
 class ResNet(nn.Module):
@@ -448,7 +485,9 @@ class ResNet(nn.Module):
         # initialize two layers called layer1 and layer2 with num_blocks residual blocks each.
 
         # TODO: (important!) implement the block layer function below before this part
-        # END TODO
+        self.layer1 = self.block_layer(num_blocks=num_blocks, in_channel=layer1_channel, out_channel=layer2_channel)
+        self.layer2 = self.block_layer(num_blocks=num_blocks, in_channel=layer2_channel, out_channel=out_channel)
+        # END 
 
     def block_layer(self, num_blocks, in_channel, out_channel):
         """
@@ -459,12 +498,32 @@ class ResNet(nn.Module):
         """
         # make use of the ResidualBlock class you've already implemented
         # again, note interm_channel == out_channel for all residual blocks here
-
         # TODO: implement the block layer which has num_blocks blocks stacked together
+
+        layers = []
+        layers.append(
+          ResidualBlock(
+            in_channel=in_channel,
+            interm_channel=out_channel,
+            out_channel=out_channel
+          )
+        )  
+
+        for _ in range(1, num_blocks):
+          layers.append(
+            ResidualBlock(
+              in_channel=out_channel,
+              interm_channel=out_channel,
+              out_channel=out_channel
+            )
+          ) 
+
+        return nn.Sequential(*layers)     
         # END TODO
-        pass
+        
 
     def forward(self, x):
         # TODO: implement the forward function based on the architecture described above
+        x = self.last(self.layer2(self.layer1(self.first(x))))
+        return x
         # END TODO
-        pass
