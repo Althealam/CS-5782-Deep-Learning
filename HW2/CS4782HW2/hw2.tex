@@ -1,0 +1,257 @@
+\documentclass{article}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{fullpage}
+\usepackage{enumerate}
+\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
+\usepackage{hyperref}
+\usepackage{tikz}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage{graphicx}
+\usepackage[export]{adjustbox}
+\graphicspath{ {./images/} }
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, filecolor=magenta, urlcolor=cyan,}
+\urlstyle{same}
+\newcommand{\x}{x}
+\newcommand{\z}{z}
+\newcommand{\n}{n}
+\newcommand{\w}{w}
+\newcommand{\h}{h}
+\newcommand{\ii}{i}
+\newcommand{\g}{g}
+\newcommand{\f}{f}
+\newcommand{\rr}{r}
+\newcommand{\oo}{o}
+\newcommand{\cc}{c}
+\newcommand{\inputvec}{x}
+\newcommand{\param}{\textcolor{blue}{w}}
+\newcommand{\W}{\textcolor{blue}{\boldsymbol{W}}}
+\newcommand{\Wprime}{\textcolor{blue}{\boldsymbol{W}^{'}}}
+\newcommand{\wo}{\textcolor{blue}{\mathbf{w}_{t}}}
+\newcommand{\wk}{\textcolor{blue}{\mathbf{w}_{k}}}
+\newcommand{\wprimec}{\textcolor{blue}{\mathbf{w}_{t + j}^{'}}}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\argmax}{\text{argmax}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\answer}[1]{\textcolor{red}{#1}}
+
+
+\def\checkmark{\tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (1,.7) -- (.25,.15) -- cycle;} 
+
+\title{CS 4782 Homework 2\vspace{-10pt}}
+\author{Due: 3/03/26 11:59pm on Gradescope}
+\date{Late submissions accepted until 3/05/26 11:59 pm}
+
+\begin{document}
+\maketitle
+
+
+\section*{Problem 1: Word2Vec (25 points)}
+
+\begin{enumerate}
+    \item  \textbf{Understanding Skip-Gram Model}
+
+
+    The key insight behind the Skip-Gram model is that \textit{``a word is known by its neighbor words"}, as we expect similar words to appear together. In Skip-Gram prediction model, we will have a center word $t$, and a contextual window surrounding $t$ as $t + j$. For example, in Figure~\ref{fig:fig1}, we have the center word ``banking", and a contextual window with the words ``turning", ``into", ``crises", and ``as".
+
+    \begin{figure*}[!htp]
+        \centering
+        \includegraphics[width=0.7\textwidth]{fig1.jpg}
+        \caption{An example of Skip-Gram model with window size 2. Here we want to maximize the probability $P$(``turning" $\mid$ ``banking"),  $P$(``into" $\mid$ ``banking"), $P$(``crises" $\mid$ ``banking"), and $P$(``as" $\mid$ ``banking"). }
+        \label{fig:fig1}
+    \end{figure*}
+    
+    \begin{figure*}[!htp]
+        \centering
+        \includegraphics[width=0.9\textwidth]{skipgram.pdf}
+        \caption{The Skip-Gram architecture as shown in the lecture slides. Matrices $\textcolor{blue}{\mathbf{U}} \in \mathbb{R}^{d \times n}$ and $\textcolor{blue}{\mathbf{V}} \in \mathbb{R}^{d \times n}$ represent the learnable vectors for the center word vectors and contextual vectors, respectively. Both $\textcolor{blue}{\mathbf{U}}$ and $\textcolor{blue}{\mathbf{V}}$ contain a vector for every word in the vocabulary set $\mathcal{V}$. $d$ and $n$ represent the dimension of the hidden word and number of words in the vocabulary set $\mathcal{V}$, respectively. Assume you have little data, so you decide to share the weights across the two layers, i.e. $\textcolor{blue}{\mathbf{U}}=\textcolor{blue}{\mathbf{V}}$.}
+        % \caption{The Skip-Gram architecture as shown in the lecture slides. The rows of $\W$ are all of the learnable center word vectors $\wo$. The columns of $\Wprime$ are all of the learnable contextual vectors $\wprimec$. Both $\W$ and $\Wprime$ contain a vector for every word in the vocabulary set $\mathcal{V}$. Typically, in data-scarce settings, the weights are shared across the two layers $\W$ and $\Wprime$ i.e. $\Wprime = \W^\top$.}
+        \label{fig:skipgram}
+    \end{figure*}
+    
+    The goal of the Skip-Gram algorithm is to accurately learn the probability distribution $P(x_{t + j} \mid x_t)$, where $x_t$ is the center word and $x_{t + j}$ is a word inside the contextual window. We want to maximize the conditional probability as a softmax probability:
+
+    \vspace{-2em}
+    \begin{align}
+        P(x_{t + j} \mid x_t)=\frac{\exp \left(\textcolor{blue}{\mathbf{U}_{:, t}}^\top \textcolor{blue}{\mathbf{V}_{:, t + j}} \right)}{\sum_{v \in \mathcal{V}} \exp \left(\textcolor{blue}{\mathbf{U}_{:, t}}^{\top} \textcolor{blue}{\mathbf{V}_{:, v}} \right)}
+        \label{eqn:skipgram}
+        % P(x_{t + j} \mid x_t)=\frac{\exp \left(\wo^\top \wprimec \right)}{\sum_{v \in \mathcal{V}} \exp \left(\textcolor{blue}{\mathbf{w}_{v}}^{\top} \textcolor{blue}{\mathbf{w}_{t}}' \right)}
+        % \label{eqn:skipgram}
+    \end{align}
+    \vspace{-1em}
+
+    The above equation is retrieving specific vectors from the weight matrices $\textcolor{blue}{\mathbf{U}}$ and $\textcolor{blue}{\mathbf{V}}$. As a reminder, $\textcolor{blue}{\mathbf{U}} \in \mathbb{R}^{d \times n}$, so $\textcolor{blue}{\mathbf{U}_{:, t}}$ is retrieving the learnable vector associated with the $t^{th}$ center word, whereas $\textcolor{blue}{\mathbf{V}_{:, t+j}}$ is retrieving the learnable vector associated with the $t+j^{th}$ contextual word ($\textcolor{blue}{\mathbf{V}} \in \mathbb{R}^{d \times n}$).
+
+    And the Skip-Gram ``naive softmax loss" will have the following form
+
+    \begin{align}
+        \mathcal{L} &= - \dfrac{1}{T}\sum_{t=1}^T\sum_{-m \leq j \leq m,j\neq 0} \log P(x_{t+j} \mid x_t) \\
+        &= - \dfrac{1}{T}\sum_{t=1}^T\sum_{-m\leq j \leq m,j\neq 0} (\textcolor{blue}{\mathbf{U}_{:, t}}^\top \textcolor{blue}{\mathbf{V}_{:, t + j}} - \log \sum_{v \in \mathcal{V}} \left( \exp \left(\textcolor{blue}{\mathbf{U}_{:, t}}^{\top} \textcolor{blue}{\mathbf{V}_{:, v}} \right) \right) \label{eqn:naive-softmax}
+    \end{align}
+
+    Here, $m$ represents the contextual window size. 
+    % In Equation~\ref{eqn:skipgram}, $\wo$ is the vector representing center word $t$ inside the matrix $\W$, and $\wprimec$ is the vector representing the word $t + j$ inside the contextual window inside the matrix $\Wprime$.
+
+    Suppose we have a vocabulary of size 5 $\{x_a, x_b, x_c, x_d, x_e\}$, and we have a $\textcolor{blue}{\mathbf{U}} = \textcolor{blue}{\mathbf{V}} =
+    \begin{bmatrix}
+        0 & 1 & 1 & -1 & 0 \\
+        0 & 0 & -1 & 1 & 0 \\
+        1 & 1 & -1 & 1 & -1
+    \end{bmatrix}$. We are given a sequence of text as $[ x_a, x_e, x_c, x_b, x_d, x_c] $
+
+    \begin{enumerate}
+
+        \item Suppose we have a center word $x_c$ as the 3rd position in the given text, and we have a window size of 2. Please identify the words inside the contextual window. (2 points)
+
+        \item Please compute the $P(x_i | x_c)$ for all words $x_i$ inside the contextual window of sizes 2 with the            word $x_c$ as the center word. (5 points)
+
+
+        \item What are the limitations of using the naive softmax loss shown in Equation~\ref{eqn:naive-softmax} in a large text dataset in terms of computational efficiency? Please justify your answer. (5 points)
+
+        \item \textbf{Negative sampling} is commonly used as an alternative to the naive softmax loss. The idea of negative sampling loss is that for each (context word, center word) pair, we will create a random subset $\mathcal{V}_S = \{x_1, \dots, x_k\} \subset \mathcal{V}$ of size $k$ without replacement, and each word in $\mathcal{V}_S$ \textbf{is not} inside the contextual window of the center words. 
+        
+        We can then change the problem of maximizing the conditional probability in Equation~\ref{eqn:skipgram} into a \textbf{binary classification problem} between predicting whether a certain word is a contextual word. In this case, the probability of an ``\textit{is contextual word}" relationship between a word $x_{t + j}$ and $x_{t}$ is defined as $\sigma(\textcolor{blue}{\mathbf{U}_{:, t}}^{\top} \textcolor{blue}{\mathbf{V}_{:, t+j}})$ where $\sigma$ is the sigmoid function. 
+
+        In particular, we want to find $\textcolor{blue}{\mathbf{U}}$ and $\textcolor{blue}{\mathbf{V}}$ to jointly maximize the probability of a correct contextual word and minimize the probability of a false/negative contextual word as 
+        \begin{align}
+            P(x_{t + j} | x_t) \prod_{i = 1}^k (1 - P(x_i | x_t)) \label{eqn:ns-prob}
+        \end{align}
+
+        Then, we will have negative sampling loss as 
+        \begin{align}
+            \mathcal{L}_{\text{NS}} &=  -\left(\prod_{t=1}^T\prod_{-m \leq j \leq m,j\neq 0}  \left( P(x_{t + j} | x_t) \prod_{k = 1}^K (1 - P(x_k | x_t)) \right)\right)^{1/T}  \label{eqn:ns-loss}
+        \end{align}
+
+        \begin{enumerate}
+            \item 
+            %Following the idea of using Equation~\ref{eqn:skipgram} to derive the naive softmax loss as Equation~\ref{eqn:naive-softmax}, 
+            Please simplify $-\log(-\mathcal{L}_{\text{NS}})$ for the Skip-Gram model using Equation~\ref{eqn:ns-loss}. (Hint: $1 - \sigma(x) = \sigma(-x)$)(7 points)
+
+            \item The idea of negative sampling is prevalent in unsupervised learning in general. Here please identify at least 2 advantages of negative sampling loss over the naive softmax loss in Skip-Gram model. (Hint: let's think about the computational efficiency / separation in the embedding space by negative sampling). (6 points)
+
+        \end{enumerate}
+        
+
+    \end{enumerate}
+
+\end{enumerate}
+
+
+
+\section*{Problem 2: Exploring the Mathematics Behind Attention (25 points)}
+
+\begin{enumerate}
+    \item We saw in class that $\text{Attention}(Q,K,V) = \rm{softmax}\left(\frac{QK^\intercal}{\sqrt{d_k}}\right)V$. Let $A=QK^\intercal$. In terms of $K$'s key vectors and $Q$'s query vectors (both of which are row vectors), what is $A_{i,j}$? (3 points)
+    \item Assume that you have random vectors $x, y \sim \mathcal{N}(\mu, \sigma^2 I)$ with $x, y,\mu \in \mathbb{R}^d$, $\sigma > 0$, and $I \in \mathbb{R}^{d \times d}$. What is $E[x^\intercal y]$? (4 points)
+    \item Let $\mu = 0$ and $\sigma = 1$. What is $\rm{Var}[x^\intercal y]$? (Hint: You might find some of these \href{https://en.wikipedia.org/wiki/Variance#Properties}{properties} useful) (10 points)
+    \item Assuming that the key and query vectors in $K$ and $Q$ similarly have 0 mean and covariance matrix $I$. Using your answers to previous parts, what is $\rm{Var}[A_{i,j}]$? (2 points)\\
+    \item In the formula for attention, what effect does dividing by $\sqrt{d_k}$ have on the variance of each element of $\frac{QK^\intercal}{\sqrt{d_k}}$? Why might this be useful? (6 points)\\
+\end{enumerate}
+
+\section*{Problem 3: Transformers vs RNNs (15 points)}
+Compare and contrast transformers with RNNs for the following aspects:
+\begin{enumerate}
+\item Briefly explain why vanishing/exploding gradients appear in RNNs during optimization. (2 points)
+\item RNNs aren't great at capturing long-term dependencies; explain how transformers address these issues. (3 points)
+\item Discuss the time complexity of both architectures with respect to sequence length and how they scale with longer sequences. (5 points)
+\item Applications: Provide examples of tasks where transformers are particularly effective compared to RNNs, and vice versa. (5 points)
+\end{enumerate}
+
+
+\section*{Problem 4: Read a Foundational Paper (16 points)}
+
+Read \href{https://arxiv.org/pdf/1706.03762.pdf}{Attention is All You Need} (2017), and answer the following questions. This paper is foundational for nearly all of deep learning, and the following questions will make sure that you understand the key methods and results of the paper. \textbf{Please answer all questions in three sentences or less.} The point of the questions is simply to check your comprehension.
+
+\begin{enumerate}
+
+\item What is the main motivation for using self-attention instead of recurrence or convolution? (4 points)
+
+\item How does the transformer model take into account the relative positions of tokens? What do they mention as other possible ways to do so? (4 points)
+
+
+\item Briefly compare the transformer model's performance and efficiency to other state of the art models. Cite a specific table or score in your answer. (As a note, the BLEU scoring method, or Bilingual Evaluation Understudy score, compares generated sentences to reference sentences using n-grams.) (4 points)
+\item Which part of the paper interested you most? Briefly describe something you found exciting about the methods, results, or anything else. (4 points)
+
+\end{enumerate}
+
+\section*{Problem 5: Self Attention by Hand (19 Points)}
+
+In this problem, we'll have you compute one pass through of single-head attention on a given matrix $X$, which contains 3-dimensional tokens representing words (for simplicity, one token corresponds to one word here). 
+
+We are going to be looking at the phrase, "dogs and cats are cute." Row $X_1$ represents the word "dogs," $X_2$ represents the word "and," and so on. (Note: For the simplicity of this problem, we will assume that this matrix already has positional embeddings included.)
+
+\begin{center} 
+$X =  \begin{bmatrix}
+2 & 1 & 0\\
+3 & -1 & 0 \\
+1 & 1 & 0 \\
+-3 & -1 & 0 \\
+4 & 0 & 1 
+\end{bmatrix} $
+\end{center}
+
+Let's assume that the weights of the key, query and value matrices are initialized randomly as below:
+\begin{center}
+    
+$W_Q =  \begin{bmatrix}
+0 \\
+0 \\
+1
+\end{bmatrix} $,
+$W_K =  \begin{bmatrix}
+0 \\
+1 \\
+0
+\end{bmatrix} $,
+$W_V =  \begin{bmatrix}
+0.2 \\
+0.4 \\
+0.3
+\end{bmatrix} $
+
+\end{center}
+
+
+\begin{enumerate}
+    \item Fill in the values of matrix $\rm{softmax}(\frac{QK^T}{\sqrt{d_k}})$ below, and show your work along the way. (8 points)
+
+    \begin{center}
+        $\rm{softmax}(\frac{QK^T}{\sqrt{d_k}}) = $
+    \begin{tabular}{ |c|c |c|c |c |c| }
+    \hline
+      & dogs & and & cats & are & cute  \\ 
+     \hline
+     dogs & & & & & \\
+     \hline
+     and & & & & & \\
+     \hline
+     cats & & & & & \\
+     \hline
+     are & & & & & \\
+     \hline
+     cute & & & & & \\
+    \hline
+    \end{tabular}
+    \end{center}
+    
+
+    \item Write a sentence about something you notice in the table above. What do different rows and columns represent? What is "paying attention" to what? (3 points)
+    
+    \item Now, find $\rm{Attention}(Q,K,V)$.  (4 points)
+    \item Let's assume we are applying look-ahead masking to our matrix. (4 points)
+    \begin{enumerate}
+        \item What is the purpose of look-ahead masking, and what is the general structure of a look-ahead masking matrix?
+        \item     Do we apply this masking \textit{before} or \textit{after} we do the softmax, and why?
+    
+    \end{enumerate}
+    
+
+\end{enumerate}
+
+
+
+
+
+\end{document}
+
