@@ -152,9 +152,12 @@ class ViT(nn.Module):
         self.patch_dim = 3*self.patch_size*self.patch_size
 
         # 1. to_patch_embedding
-        self.patch_norm1 = nn.LayerNorm(self.patch_dim)
-        self.patch_proj = nn.Linear(self.patch_dim, d_model)
-        self.patch_norm2 = nn.LayerNorm(d_model)
+        self.to_patch_embedding = nn.Sequential(
+            Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1=patch_size, p2=patch_size),
+            nn.LayerNorm(self.patch_dim),
+            nn.Linear(self.patch_dim, d_model),
+            nn.LayerNorm(d_model),
+        )
 
         # 2. pos_embedding
         h_w = img_side_length//patch_size # height and width of the patch
@@ -187,17 +190,8 @@ class ViT(nn.Module):
         b, c, h, w = x.shape
 
         # ==== 1. to_patch_embedding ====
-        # (b, c, h, w) ==> (b, c, h//p, p, w//p, p)
-        # h==>(h//p, p), w==>(w//p, p)
-        x = x.view(b, c, h//self.patch_size, self.patch_size, w//self.patch_size, self.patch_size)
-        # (b, h//p, w//p, c, p, p)
-        x = x.permute(0, 2, 4, 1, 3, 5).contiguous()
-        # (b, num_patches, patch_dim)
-        x = x.view(b, self.num_patches, self.patch_dim)
+        x = self.to_patch_embedding(x)
 
-        x = self.patch_norm1(x)
-        x = self.patch_proj(x) # (b, num_patches, d_model)
-        x = self.patch_norm2(x)
 
         # ==== 2. pos_embedding ====
         # pos_embedding: (num_patches, d_model)
@@ -206,11 +200,11 @@ class ViT(nn.Module):
         # ==== 3. encoder ====
         x = self.dropout(x)
         x = self.encoder(x)
-        x = self.output_ln(x)
 
         # global average pooling
         # (b, num_patches, d_model) ==> (b, d_model)
         embedding = x.mean(dim=1)
+        x = self.output_ln(embedding)
 
         if return_embedding:
           return embedding
