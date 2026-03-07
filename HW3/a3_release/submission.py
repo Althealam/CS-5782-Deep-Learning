@@ -162,7 +162,7 @@ class ViT(nn.Module):
         # 2. pos_embedding
         h_w = img_side_length//patch_size # height and width of the patch
         pos_data = posemb_sincos_2d(h_w, h_w, d_model)
-        self.pos_embedding = nn.Parameter(pos_data, requires_grad = False)
+        self.register_buffer("pos_embedding", pos_data.unsqueeze(0))
 
         # 3. encoder
         self.dropout = nn.Dropout(p)
