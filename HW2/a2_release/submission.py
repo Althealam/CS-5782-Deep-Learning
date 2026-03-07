@@ -1,10 +1,12 @@
 import numpy as np
+from scipy.special import hankel2e
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
 import gensim
-
+from gensim.models import Word2Vec
+from gensim.models import KeyedVectors
 
 def get_word_embeddings(model, sequence):
     """
@@ -20,8 +22,18 @@ def get_word_embeddings(model, sequence):
     word_embeddings = []
 
     ## TODO 1: implement function for Word2Vec model
+    # isinstance(object, type)
+    if isinstance(model, Word2Vec):
+      for word in sequence.split():
+        if word in model.wv:
+          word_embeddings.append(model.wv[word])
+
     ## TODO 4: add support for KeyedVectors model
     #################
+    elif isinstance(model, KeyedVectors):
+      for word in sequence.split():
+        if word in model:
+          word_embeddings.append(model[word])
 
     return word_embeddings
 
@@ -42,7 +54,9 @@ def get_reviews_embeddings(model, data):
     reviews_embeddings = []
     ## TODO 2: implement function
     #################
-
+    for review in data['text']:
+      word_embedding = get_word_embeddings(model, review)
+      reviews_embeddings.append(word_embedding)
     return reviews_embeddings
 
 
@@ -58,6 +72,12 @@ def max_pool(embeddings, d=300):
     max_pool_embeddings = []
     ## TODO 3: max pooling
     #################
+    if len(embeddings)==0:
+      return [0]*d
+    for i in range(d): # iterate all dimensions
+      column = [row[i] for row in embeddings] # embedding for dimension i
+      max_pool_embeddings.append(max(column))
+
     return max_pool_embeddings
 
 class LSTM(nn.Module):
@@ -82,6 +102,11 @@ class LSTM(nn.Module):
 
         ## TODO 5: define LSTM components
         #################
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.relu = nn.ReLU()
+        self.fc1 = nn.Linear(in_features=hidden_size*num_layers, out_features=128)
+        self.fc2 = nn.Linear(in_features=128, out_features=num_classes)
+
 
     def forward(self, x):
         """
@@ -93,7 +118,13 @@ class LSTM(nn.Module):
         """
         ## TODO 5: implement the forward function based on the architecture described above
         #################
-
+        out, (hn, cn) = self.lstm(x) 
+        x = hn.transpose(0, 1) 
+        x = x.reshape(x.size(0), -1)  
+        x = self.relu(x)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
         return x
 
 
@@ -115,8 +146,20 @@ def reviews_processing(google_embeddings, length):
     embeddings = []
     ## TODO 6: Implement reviews_processing to modify the embeddings
     ###########
+    d = len(google_embeddings[0][0]) # embedding size for vocabulary embeding
+    for embedding in google_embeddings:
+      if len(embedding)>length:
+        embeddings.append(embedding[:length])
+      else:
+        padding_size = length-len(embedding)
+        padding = np.zeros((padding_size, d), dtype=np.float32) # zero matrix and its size is (padding_size, d)
+        if len(embedding)==0:
+          embeddings.append(padding)
+        else:
+          new_emb = np.vstack((embedding, padding))
+          embeddings.append(new_emb)
+    return np.array(embeddings, dtype=np.float32)
 
-    return embeddings
 
 def val(model, val_loader, criterion, device):
     """
@@ -132,13 +175,24 @@ def val(model, val_loader, criterion, device):
     num_correct = 0
     total = 0
 
-    with torch.no_grad():
-        for i, (inputs, labels) in enumerate(val_loader, 0):
+    model.eval() # dropout, batch normalization
+    with torch.no_grad(): # close the computation of gradients
+        for i, (inputs, labels) in enumerate(val_loader, 0): # iterate the batch in val_loader
 
             # TODO 7: write validation loop body
             #################
-            pass
+              
+            inputs = inputs.to(device)
+            labels = labels.to(device)            
+            outputs = model(inputs)
+            # output.shape = (batch_size, num_classes)
+            loss = criterion(outputs, labels)
+            val_running_loss+=loss.item()
 
+            _, preds = torch.max(outputs, 1) # find the maximal value on dimension 1 (which is num_classes)
+            num_correct+=(preds==labels).sum() # .item() change the tensor into python
+            total+=labels.size(0)
+    model.train() # train model
     return val_running_loss, (num_correct / total).item()
 
 def train(model, train_loader, val_loader, criterion, epochs, optimizer, device):
@@ -161,11 +215,19 @@ def train(model, train_loader, val_loader, criterion, epochs, optimizer, device)
 
     for epoch in range(epochs):
         running_loss = 0.0
-        for i, (inputs, labels) in enumerate(train_loader):
-
+        for i, (inputs, labels) in enumerate(train_loader): # iterate all the batch in train_loader
             # TODO 7: write train loop body
             #################
-            pass
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(inputs)
+
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step() # update parameter by using gradients and learning rate
+            running_loss+=loss.item()
 
         val_loss, val_acc = val(model, val_loader, criterion, device)
         train_loss_arr.append(running_loss)
@@ -233,12 +295,18 @@ class MultiHeadAttention(nn.Module):
         # Hint: Recall that linear layers essentially perform matrix multiplication
         #       between the layer input and layer weights
         #################
+        self.W_q = nn.Linear(d_model, d_model)
+        self.W_k = nn.Linear(d_model, d_model)
+        self.W_v = nn.Linear(d_model, d_model)
+        self.W_o = nn.Linear(d_model, d_model)
+
 
     def split_heads(self, x):
         """
         Reshapes Q, K, V into multiple heads.
         """
         batch_size, seq_length, d_model = x.size()
+        # [batch_size, num_heads, seq_length, d_model]
         return x.view(batch_size, seq_length, self.num_heads, self.d_k).permute(0, 2, 1, 3)
 
     def compute_attention(self, Q, K, V):
@@ -247,7 +315,9 @@ class MultiHeadAttention(nn.Module):
         """
         # TODO 9.2: compute attention using the attention equation provided above
         #################
-        attention = None
+        scores = Q@K.transpose(-2, -1)/math.sqrt(self.d_k)
+        weights = torch.softmax(scores, dim=-1)
+        attention = weights@V
         return attention
 
     def combine_heads(self, x):
@@ -260,7 +330,20 @@ class MultiHeadAttention(nn.Module):
     def forward(self, x):
         # TODO: 9.3 implement forward pass
         #################
-        return x
+        Q = self.W_q(x)
+        K = self.W_k(x)
+        V = self.W_v(x)
+
+        Q = self.split_heads(Q)
+        K = self.split_heads(K)
+        V = self.split_heads(V)
+
+        attention = self.compute_attention(Q, K, V)
+
+        attn = self.combine_heads(attention)
+
+        output = self.W_o(attn)
+        return output
 
 
 
@@ -275,11 +358,14 @@ class FeedForward(nn.Module):
 
         # TODO 10: define the network
         #################
+        self.fc1 = nn.Linear(in_features = d_model, out_features = d_ff)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(in_features = d_ff, out_features = d_model)
 
     def forward(self, x):
         # TODO 10: implement feed forward pass
         #################
-
+        x = self.fc2(self.relu(self.fc1(x)))
         return x
 
 
@@ -296,12 +382,25 @@ class EncoderLayer(nn.Module):
 
         # TODO 11: define the encoder layer
         #################
+        self.p = p
+        self.self_attn = MultiHeadAttention(d_model, num_heads)
+        self.norm1 = nn.LayerNorm(normalized_shape=d_model)
+        self.feed_forward = FeedForward(d_model, d_ff)
+        self.norm2 = nn.LayerNorm(normalized_shape=d_model)
+        self.dropout = nn.Dropout(p)
+
 
     def forward(self, x):
 
         ## TODO 11: implement the forward function based on the architecture described above
         #################
+        # ---- self attention block
+        attn_out = self.self_attn(x)
+        x = self.norm1(x+self.dropout(attn_out))
 
+        # ---- feed forward block
+        ff_out = self.feed_forward(x)
+        x = self.norm2(x+self.dropout(ff_out))
         return x
 
 
@@ -323,11 +422,34 @@ class Transformer(nn.Module):
 
         # TODO 12: define the transformer
         #################
+        self.positional_encoding = PositionalEncoding(d_model, max_seq_length)
+        self.dropout = nn.Dropout(p)
+        self.encoder_layers = nn.ModuleList([
+          EncoderLayer(d_model, num_heads, d_ff, p)
+          for _ in range(num_layers)
+        ])
+        self.fc1 = nn.Linear(in_features = d_model, out_features = 128)
+        self.fc2 = nn.Linear(in_features = 128, out_features = num_classes)
+        self.relu = nn.ReLU()
 
     def forward(self, x):
 
         ## TODO 12: implement the forward pass
         #################
+        # --- positional encoding
+        x = self.positional_encoding(x)
+        x = self.dropout(x)
+
+        # --- stacked encode layers
+        for layer in self.encoder_layers:
+          x = layer(x)
+
+        # --- mean pool
+        x = x.mean(dim=1) # (batch_size, seq_len, d_model) ==> (batch_size, d_model)
+
+        # --- classification head
+        x = self.fc1(self.relu(x))
+        x = self.fc2(self.relu(x))
 
         return x
 
@@ -355,6 +477,21 @@ def process_batch(bert_model, data, criterion, device, val=False):
     #       check the __getitem__ function defined in the CustomClassDataset implemented
     #       at the beginning of Part 5
     # Hint: Make sure to send the data to the same device that the model is on.
+    input_ids = data["source_ids"].to(device)
+    att_mask = data["source_mask"].to(device)
+    labels = data["label"].to(device).long()
+    model_out = bert_model(input_ids=input_ids, attention_mask=att_mask)
+    logits = model_out.logits if hasattr(model_out, "logits") else model_out[0]
+
+    loss = criterion(logits, labels)
+    preds = torch.argmax(logits, dim=-1)
+    metrics["loss"] = loss
+    outputs["out"] = logits
+    outputs["preds"] = preds
+
+    if val:
+        metrics["batch_size"] = torch.tensor(labels.size(0), device=device)
+        metrics["num_correct"] = torch.eq(preds, labels).sum()
     #################
 
     return outputs, metrics
