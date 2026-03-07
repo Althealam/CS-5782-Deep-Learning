@@ -45,9 +45,27 @@ def triplet_loss(queries, keys, margin=1.0):
     # Hint: How might you use matrices/matrix operations to keep track of distances between
     #       positive and negative pairs? (looking ahead to the instructions in part 1.2 maybe be useful)
     #################
-    loss = None
+    # 1. L2 Normlization
+    queries_norm = F.normalize(queries, p=2, dim=1)
+    keys_norm = F.normalize(keys, p=2, dim=1)
 
-    return loss
+    # 2. Similarity Matrix
+    # or: similarity_matrix = queries_norm@keys_norm.T, shape = (b, b), which means sim(qi, kj)
+    similarity_matrix = torch.matmul(queries_norm, keys_norm.T)
+
+    # 3. Positive Similarity
+    positive_sim = similarity_matrix.diag() # sim(q_i, k_i), shape = (b, )
+    positive_sim = positive_sim.unsqueeze(1) # shape = (b, 1)
+
+    # 4. triplet loss
+    loss_matrix = similarity_matrix-positive_sim+margin # (b, b) - (b, 1)
+    loss_matrix = F.relu(loss_matrix)
+
+    # 5. remove diagonal
+    mask = ~torch.eye(b, dtype=torch.bool, device = queries.device)
+    loss_matrix = loss_matrix[mask]
+
+    return loss_matrix.mean()
 
 
 def nt_xent_loss(queries, keys, temperature=0.1):
@@ -60,6 +78,11 @@ def nt_xent_loss(queries, keys, temperature=0.1):
 
     Outputs:
     The SimCLR loss, calculated as described above.
+
+    We do two random data augmentation in the SimCLR
+    - Queries identifies the representation after the first augmentation, and batch size is B
+    - Keys identifies the representation after the second augmentation, and batch size is B
+    - queries[i] and keys[i] are the different variants for the same image 
     """
     b, device = queries.shape[0], queries.device
     n = b * 2
@@ -69,7 +92,32 @@ def nt_xent_loss(queries, keys, temperature=0.1):
     #       location (device) your model and data are on.
     # Hint: Which loss function does the first equation in step 3 remind you of?
     #################
-    loss = None
+    # 1. L2 Normalization
+    queries_norm = F.normalize(queries, p=2, dim=1)
+    keys_norm = F.normalize(keys, p=2, dim=1)
+
+    # 2. Put all the samples together
+    # we have 2b training samples (as the question said), and each sample's dimension is D
+    representation = torch.cat([queries_norm, keys_norm], dim=0) # [2b, D]
+
+    # 3. Similarity Matrix 
+    similarity_matrix = torch.matmul(representation, representation.T) # [2b, 2b]
+    similarity_matrix = similarity_matrix/temperature
+
+    # 4. Masked self-similarity for the negative samples pair
+    mask = torch.eye(n, dtype=torch.bool).to(device) # In
+    similarity_matrix = similarity_matrix.masked_fill(mask, -1e9)
+
+    # 5. find positive pair labels
+    # each image has one positive sample and 2B-2 negative samples
+    labels = torch.arange(n).to(device) # Example: [1, 2, 3, 4, 5, 6]
+    # [q1, q2, q3, k1, k2, k3] -> [k1, k2, k3, q1, q2, q3]
+    # it means that the key for q1 is k1
+    labels[:b]+=b 
+    labels[b:]-=b
+
+    # 6. cross entropy loss
+    loss = F.cross_entropy(similarity_matrix, labels)
 
     return loss
 
@@ -91,14 +139,84 @@ class ViT(nn.Module):
 
         # TODO3: define the ViT
         #################
+        self.d_model = d_model
+        self.num_layers = num_layers
+        self.p = p
 
+        # number of patches in the image (sequence length/number of tokens)
+        self.num_patches = (img_side_length//patch_size)**2
+        # size of each patch
+        self.patch_size = patch_size
+        # patch dim (RGB: 3 channels, and each channel have patch_size*pathc_size)
+        # raw input dimension (vocab_size)
+        self.patch_dim = 3*self.patch_size*self.patch_size
+
+        # 1. to_patch_embedding
+        self.patch_norm1 = nn.LayerNorm(self.patch_dim)
+        self.patch_proj = nn.Linear(self.patch_dim, d_model)
+        self.patch_norm2 = nn.LayerNorm(d_model)
+
+        # 2. pos_embedding
+        h_w = img_side_length//patch_size # height and width of the patch
+        pos_data = posemb_sincos_2d(h_w, h_w, d_model)
+        self.pos_embedding = nn.Parameter(pos_data, requires_grad = False)
+
+        # 3. encoder
+        self.dropout = nn.Dropout(p)
+        encoder_layers = nn.TransformerEncoderLayer(
+          d_model = d_model, 
+          nhead = num_heads, 
+          dim_feedforward=d_ff, 
+          dropout = p,
+          batch_first = True)
+        self.encoder = nn.TransformerEncoder(encoder_layers, num_layers=num_layers)
+        self.output_ln = nn.LayerNorm(d_model)
+
+        # 4. projection head (only be used when return_embedding is False)
+        self.projection_head = nn.Sequential(
+          nn.Linear(d_model, d_model),
+          nn.SiLU(),
+          nn.Linear(d_model, d_model)
+        )
         ################
 
     def forward(self, x, return_embedding=False):
 
         ## TODO4: Write the forward pass for the ViT
         #################
+        b, c, h, w = x.shape
 
-        #################
+        # ==== 1. to_patch_embedding ====
+        # (b, c, h, w) ==> (b, c, h//p, p, w//p, p)
+        # h==>(h//p, p), w==>(w//p, p)
+        x = x.view(b, c, h//self.patch_size, self.patch_size, w//self.patch_size, self.patch_size)
+        # (b, h//p, w//p, c, p, p)
+        x = x.permute(0, 2, 4, 1, 3, 5).contiguous()
+        # (b, num_patches, patch_dim)
+        x = x.view(b, self.num_patches, self.patch_dim)
+
+        x = self.patch_norm1(x)
+        x = self.patch_proj(x) # (b, num_patches, d_model)
+        x = self.patch_norm2(x)
+
+        # ==== 2. pos_embedding ====
+        # pos_embedding: (num_patches, d_model)
+        x = x+self.pos_embedding # (b, num_patches, d_model)
+
+        # ==== 3. encoder ====
+        x = self.dropout(x)
+        x = self.encoder(x)
+        x = self.output_ln(x)
+
+        # global average pooling
+        # (b, num_patches, d_model) ==> (b, d_model)
+        embedding = x.mean(dim=1)
+
+        if return_embedding:
+          return embedding
+        
+        # ==== 4. projection_head ====
+        output = self.projection_head(embedding)
 
         return output
+        #################
