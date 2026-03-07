@@ -1,4 +1,5 @@
 import torch
+from torch.distributed import device_mesh
 import torch.nn.functional as F
 import torch.nn as nn
 from einops import rearrange
@@ -142,6 +143,7 @@ class ViT(nn.Module):
         self.d_model = d_model
         self.num_layers = num_layers
         self.p = p
+        self.img_side_length = img_side_length
 
         # number of patches in the image (sequence length/number of tokens)
         self.num_patches = (img_side_length//patch_size)**2
@@ -159,10 +161,10 @@ class ViT(nn.Module):
             nn.LayerNorm(d_model),
         )
 
-        # 2. pos_embedding
-        h_w = img_side_length//patch_size # height and width of the patch
-        pos_data = posemb_sincos_2d(h_w, h_w, d_model)
-        self.register_buffer("pos_embedding", pos_data.unsqueeze(0))
+        # # 2. pos_embedding
+        # h_w = img_side_length//patch_size # height and width of the patch
+        # pos_data = posemb_sincos_2d(h_w, h_w, d_model)
+        # self.register_buffer("pos_embedding", pos_data.unsqueeze(0))
 
         # 3. encoder
         self.dropout = nn.Dropout(p)
@@ -188,14 +190,15 @@ class ViT(nn.Module):
         ## TODO4: Write the forward pass for the ViT
         #################
         b, c, h, w = x.shape
-
         # ==== 1. to_patch_embedding ====
         x = self.to_patch_embedding(x)
 
-
         # ==== 2. pos_embedding ====
-        # pos_embedding: (num_patches, d_model)
-        x = x+self.pos_embedding # (b, num_patches, d_model)
+        h_w = self.img_side_length // self.patch_size
+        pos_embedding = posemb_sincos_2d(
+            h_w, h_w, self.d_model, dtype=x.dtype
+        ).to(x.device).unsqueeze(0)
+        x = x+pos_embedding # (b, num_patches, d_model)
 
         # ==== 3. encoder ====
         x = self.dropout(x)
