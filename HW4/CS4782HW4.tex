@@ -1,0 +1,117 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usepackage{tkz-base}
+\usepackage{tkz-euclide}
+\usepackage{comment}
+\usepackage{amsfonts}
+
+\title{CS 4782 Homework 4\vspace{-10pt}}
+\author{Due: 3/19/26 11:59pm on Gradescope}
+\date{Late submissions accepted until 3/21/26 11:59 pm}
+
+\newif\ifshow % toggle true or false based on if want to hide section
+% \showtrue % show the sections
+\showtrue % hide the sections
+
+\ifshow
+  \newenvironment{answer}{\color{red}}{\color{black}}
+\else
+  \excludecomment{answer}
+\fi
+
+\begin{document}
+\maketitle
+
+\section*{Problem 1: Generative Models (12 points)}
+
+With the price of on-campus parking skyrocketing, you devised a scheme to print fake parking permits. To create these fake parking permits, you plan to apply what you learned about in your deep learning class this week: generative models.
+
+Cornell has 30 types of permits, each allowing access to different parking lots. You decide to try out three different generative vision models to see which one will give you the best results in generating these various permits. However, you notice that each of the models you try out have drawbacks. Match each of the challenges listed below with the generative model they most likely correspond to and explain your answer in 2-3 sentences. \textbf{The 3 generative models you should be considering for this problem are: GANs, VAEs, Diffusion Models.}
+
+
+\paragraph{1(a).} Although there are 30 different types of parking permits, you noticed that \textbf{model \#1} only generates 3 of these permit types. (4 points)\\
+
+
+\paragraph{1(b).} The next model you try, \textbf{model \#2}, seems to always generate blurry-looking parking permits. (4 points)\\
+
+
+\paragraph{1(c).} You finally find a model, \textbf{model \#3}, that generates high quality, different-looking parking permits. You want to use \textbf{model \#3} to mass-produce fake parking permits and sell them at a discounted price. However, you quickly realize that \textbf{model \#3} is extremely slow at generating samples, which hinders your scheme to become rich. (4 points)\\
+
+
+
+\section*{Problem 2: ELBO (45 points)}
+In this question, we will work on an alternative derivation for the \textbf{Evidence Lower Bound (ELBO)}, where the "evidence" is the log likelihood of the observed data. The ELBO is a key component in variational inference and variational autoencoders (VAEs), as it provides a tractable way to approximate the intractable log marginal likelihood.
+
+Your task is to derive the ELBO expression in terms of observed $x$, latent $z$, and $q_\phi(z|x)$, which is the variational distribution that seeks to optimize the true posterior $p(z|x)$ by optimizing $\phi$. You have already seen an alternative derivation of the ELBO in class, but this approach follows a different path. 
+
+\paragraph{2(a).} First, we need to express the log marginal likelihood in terms of the joint distribution. [Hint: This involves marginalizing out the latent variable using integration.] (2 points) \\
+
+
+\paragraph{2(b).} Next, we introduce the variational distribution $q_\phi(z|x)$ in a way that does not change the expression. [Hint: Think about multiplying by an identity.] (2 points) \\
+
+
+\paragraph{2(c).} Now, use the definition of expectation to simplify the integral further. (3 points) \\
+
+
+\paragraph{2(d).} Why is the expectation with respect to the variational distribution a useful quantity? Explain in 2-3 sentences. (5 points)
+
+   
+
+\paragraph{2(e).} Finally, we can convert this expression into a lower bound on the log marginal likelihood using a specific inequality. [Hint: Consider Jensen's inequality.] (5 points) \\
+
+
+
+\paragraph{2(f).} What is the significance of having a lower bound on the log marginal likelihood? Explain in 2-3 sentences. (5 points) \\
+
+
+
+\paragraph{2(g).} Now, we can extend the bound you found in step 4 for VAEs. Recall the factorization assumptions made in VAEs (e.g., the conditional independence of $x$ and $z$ given the latent variables). Show that the final inequality term is equal to $\mathbb{E}_{q_\phi(z|x)}\left[\log p_\theta(x|z)\right] - D_{KL}\left(q_\phi(z|x) \| p(z)\right)$ with three steps: using the chain rule of probability, splitting the expectation, and using the definition of KL divergence. (13 points) \\
+
+   
+
+\paragraph{2(h).} Interpret the two terms in the final ELBO expression in the context of VAEs. How does this relate to the concepts of reconstruction error and regularization? Explain in 2-3 sentences. (10 points)
+
+   
+
+\section*{Problem 3: Diffusion Derivations (33 points)}
+
+ 
+ 
+To derive the loss function, as done in class, we want to measure the distance between the probability distribution
+\[ q(\mathbf{z}_{t-1}|\mathbf{z}_t, \mathbf{x}), p_{\theta}(\mathbf{z}_{t-1}|\mathbf{z}_t)\]
+for each $t$, and learn models $\mu_{\theta}$, $\Sigma_{\theta}$ such that the distance between the above two probability distributions is small. In fact, this is exactly how we learn the reverse process, which enables us to sample using diffusion models.
+ 
+To this end, we measured the distance between these probability distributions using the \textit{$KL$-divergence $D_{KL}(P||Q)$}. This represents some form of distance between the probability distributions $P$ and $Q$. In class, recall that we cited a formula between $P$ and $Q$ when $P$ and $Q$ were multivariate Gaussians. Eventually, this gave us the loss
+\[ L(\theta) = \mathbb{E}_{\mathbf{x},t}[||\tilde{\mu}-\mu_{\theta}||^2]\]
+where we have $p_{\theta}(\mathbf{z}_{t-1}|\mathbf{z}_t) \sim \mathcal{N}(\mu_{\theta}(\mathbf{z}_t,t),\Sigma_{\theta}(\mathbf{z}_t,t))$, $q(\mathbf{z}_{t-1}|\mathbf{z}_t, \mathbf{x}) \sim \mathcal{N}(\tilde{\mu}(\mathbf{z}_t,\mathbf{x}), \tilde{\Sigma}(\mathbf{z}_t,\mathbf{x}))$, and we try to learn $p_{\theta}(\mathbf{z}_{t-1}|\mathbf{z}_t) \approx q(\mathbf{z}_{t-1}|\mathbf{z}_t, \mathbf{x})$.
+However, how is the KL divergence defined and why do we view it as a form of distance? Here we answer this. 
+The KL divergence is defined as:
+$$D_{KL}(P||Q) = \mathbb{E}_{P}\left(\log\frac{P}{Q}\right)$$
+For discrete distributions, this will be a sum, and for continuous distributions, this will be an integral. Note that the KL divergence is \textit{not} symmetric, which is why it does not form a true distance metric.
+\paragraph{3(a).}The KL divergence is supposed to represent some form of distance between the probability distributions $P, Q$. For this to make sense, it must be non-negative. Prove that $D_{KL}(P||Q) \ge 0$.
+\textit{Hint: you may assume that $P, Q$ have given densities $P(x), Q(x)$. Also, use Jensen's Inequality: for a concave function $f$, a probability distribution $\pi$, and a random variable $X$, we have 
+\[ \mathbb{E}_{\pi}(f(X)) \le f(\mathbb{E}_{\pi}(X))\]
+where the expectation is taken with respect to the probability distribution $\pi$.} (15 points) \\
+
+\paragraph{3(b).}Recall we used a formula for the KL divergence between two Gaussians in class, to create the loss function to train diffusion models. This formula was: for two multivariate Gaussian distributions in $\mathbb{R}^d$, $P \sim \mathcal{N}(\mu_1, \Sigma_1)$, $Q \sim \mathcal{N}(\mu_2, \Sigma_2)$,
+\[ D_{KL}(P||Q) = \frac12\left(tr(\Sigma_2^{-1} \Sigma_1)-d+(\mu_2-\mu_1)^T \Sigma_2^{-1}(\mu_2-\mu_1)+\ln\left(\frac{\det \Sigma_2}{\det \Sigma_1}\right)\right)\]
+where $tr$ denotes trace of a matrix (assuming $\Sigma_1, \Sigma_2$ are invertible). 
+ 
+ 
+ 
+In the next problem, we'll derive it for the case of univariate Gaussian distributions. For this problem, consider two univariate Gaussian distributions, $P \sim \mathcal{N}(\mu_1, \sigma_1^2)$, $Q \sim \mathcal{N}(\mu_2, \sigma_2^2)$. We have that
+\[ D_{KL}(P||Q) = \frac12\left(\sigma_2^{-2} \sigma_1^2+(\mu_2-\mu_1)^2\sigma_2^{-2}-1+\ln\left(\frac{ \sigma_2^2}{\sigma_1^2}\right)\right)\]
+Prove that this formula for KL divergence between univariate Gaussians follows as a special case from the general formula for KL divergence between multivariate Gaussians written above. (18 points) \\
+ 
+
+ 
+\paragraph{3(c) (BONUS).} Prove the above formula for the case of single variable Gaussians \textit{without using the multivariate formula}: show directly that, for two univariate Gaussian distributions, $P := \mathcal{N}(\mu_1, \sigma_1^2)$, $Q := \mathcal{N}(\mu_2, \sigma_2^2)$, we have that
+\[ D_{KL}(P||Q) = \frac12\left(\sigma_2^{-2} \sigma_1^2+(\mu_2-\mu_1)^2\sigma_2^{-2}-1+\ln\left(\frac{ \sigma_2^2}{\sigma_1^2}\right)\right).\]
+Show all intermediate steps. (10 points)
+
+
+\end{document}
